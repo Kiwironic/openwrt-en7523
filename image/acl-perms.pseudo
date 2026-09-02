@@ -1,0 +1,6 @@
+/usr/share/acl.d/dnsmasq_acl.json m 0644 0 0
+/usr/share/acl.d/logd.json m 0644 0 0
+/usr/share/acl.d/ntpd.json m 0644 0 0
+/usr/share/acl.d/wpad_acl.json m 0644 0 0
+/etc/capabilities/ntpd.json m 0644 0 0
+/etc/capabilities/wpad.json m 0644 0 0

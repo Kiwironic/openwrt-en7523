@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config ECONET_NPU
+	tristate "EcoNet EN7523 NPU support"
+	depends on ARCH_AIROHA || COMPILE_TEST
+	help
+	  Driver to bring up the EcoNet NPU for Wi-Fi on EN7523 SoCs.

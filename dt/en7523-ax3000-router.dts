@@ -1,0 +1,381 @@
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+/dts-v1/;
+
+/*
+ * Device Tree for an EN7523-based AX3000 WiFi router with MT7916 dual-band WiFi.
+ * Supports both initramfs (TFTP) boot and persistent NAND sysupgrade.
+ */
+/memreserve/ 0x80000000 0x200000;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/reset/airoha,en7523-reset.h>
+#include "en7523.dtsi"
+
+/ {
+	model = "EN7523 AX3000 WiFi Router";
+	compatible = "airoha,en7523-ax3000-router", "airoha,en7523";
+
+	aliases {
+		serial0 = &uart1;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200 earlycon";
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x80200000 0x0fe00000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x80000000 0x10000000>;
+	};
+
+	reserved-memory {
+		qdma0_buf: qdma0-buf@87000000 {
+			no-map;
+			reg = <0x87000000 0x02000000>;
+		};
+
+		qdma1_buf: qdma1-buf@89000000 {
+			no-map;
+			reg = <0x89000000 0x01000000>;
+		};
+	};
+
+	npu: npu@1e800000 {
+		compatible = "econet,ecnt-npu";
+		reg = <0x1e800000 0x60000>, <0x1e900000 0x313000>;
+		memory-region = <&npu_binary>;
+		clocks = <&scu EN7523_CLK_NPU>;
+		clock-names = "npu";
+		resets = <&scu EN7523_NPU_RST>;
+		reset-names = "npu";
+		interrupts = <0x00 0x76 0x04>, <0x00 0x77 0x04>,
+			     <0x00 0x78 0x04>, <0x00 0x79 0x04>,
+			     <0x00 0x7a 0x04>, <0x00 0x7b 0x04>,
+			     <0x00 0x7d 0x04>;
+	};
+
+	/*
+	 * SoC GPIO LEDs verified on hardware:
+	 * Power=GPIO11 (active-low), PON=GPIO10 (active-low),
+	 * LOS=GPIO3 (active-HIGH!), Internet=GPIO1 (active-low).
+	 *
+	 * LAN LEDs (GPIO22-25) are NOT SoC GPIOs — they are PHY LED outputs
+	 * from the MT7530 switch, controlled directly by the switch hardware
+	 * in PHY LED mode (SCU 0x0210 bits 3-10 set by bootloader to 0x2a8).
+	 * The pinctrl hwinit does NOT clear SCU 0x0210 so the switch keeps
+	 * driving them automatically (link/activity). No DTS LED node needed.
+	 * The MT7530 LED controller must be enabled in the switch driver setup
+	 * (see patch 930-44). DSA port mapping: eth1=p1=LAN4, eth2=p2=LAN3,
+	 * eth3=p3=LAN2, eth4=p4=LAN1
+	 *
+	 * WiFi 2.4G=GPIO4, WiFi 5G=GPIO5. These were in SPI flash mode
+	 * (SCU 0x034 bits 4,5) but the pinctrl hwinit now clears those bits
+	 * to free them as GPIO outputs. The SPI NAND uses a dedicated SNFI
+	 * controller, not these pins. WiFi LED triggers (phy0tpt/phy1tpt)
+	 * are registered by the mt76 driver when the WiFi PHY comes up.
+	 * WPS=GPIO14 is registered for the WPS LED. If it conflicts with
+	 * SPI quad mode, the GPIO request will fail safely (LED won't light
+	 * but NAND access is unaffected).
+	 */
+	leds {
+		compatible = "gpio-leds";
+
+		led-power {
+			label = "green:power";
+			gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+
+		led-pon {
+			label = "green:pon";
+			gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+		};
+
+		led-los {
+			label = "red:los";
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+
+		led-internet {
+			label = "green:internet";
+			gpios = <&gpio0 1 GPIO_ACTIVE_LOW>;
+		};
+
+		led-wps {
+			label = "green:wps";
+			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	keys {
+		compatible = "gpio-keys-polled";
+		poll-interval = <100>;
+
+		key-reset {
+			label = "reset";
+			gpios = <&gpio0 0 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+			debounce-interval = <60>;
+		};
+
+		key-wps {
+			label = "wps";
+			gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+			debounce-interval = <60>;
+		};
+	};
+
+	/*
+	 * Ethernet and switch nodes. Initially disabled here; enabled via
+	 * status="okay" references at the bottom of this file.
+	 */
+	eth: ethernet@1fb50000 {
+		compatible = "airoha,en7523-eth";
+		status = "disabled";
+
+		reg = <0x1fb50000 0x2600>,
+		      <0x1fb54000 0x2000>,
+		      <0x1fb56000 0x2000>,
+		      <0x1fbf9000 0x1000>;
+		reg-names = "fe", "qdma0", "qdma1", "gdmp";
+
+		resets = <&scu EN7523_FE_RST>,
+			 <&scu EN7523_FE_PDMA_RST>,
+			 <&scu EN7523_FE_QDMA_RST>,
+			 <&scu EN7523_DUAL_HSI0_MAC_RST>,
+			 <&scu EN7523_DUAL_HSI1_MAC_RST>,
+			 <&scu EN7523_HSI_MAC_RST>,
+			 <&scu EN7523_GDMP_RST>;
+		reset-names = "fe", "pdma", "qdma",
+			      "hsi0-mac", "hsi1-mac", "hsi-mac", "gdmp";
+
+		interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
+
+		memory-region = <&qdma0_buf>, <&qdma1_buf>;
+		memory-region-names = "qdma0-buf", "qdma1-buf";
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		gdm1: ethernet@1 {
+			compatible = "airoha,eth-mac";
+			reg = <1>;
+			phy-mode = "internal";
+			status = "disabled";
+
+			fixed-link {
+				speed = <10000>;
+				full-duplex;
+				pause;
+			};
+		};
+	};
+
+	switch: switch@1fb58000 {
+		compatible = "airoha,en7523-switch";
+		reg = <0x1fb58000 0x8000>;
+		resets = <&scu EN7523_GSW_RST>;
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+		status = "disabled";
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			gsw_port1: port@1 {
+				reg = <1>;
+				phy-mode = "internal";
+				phy-handle = <&gsw_phy1>;
+				status = "disabled";
+			};
+
+			gsw_port2: port@2 {
+				reg = <2>;
+				phy-mode = "internal";
+				phy-handle = <&gsw_phy2>;
+				status = "disabled";
+			};
+
+			gsw_port3: port@3 {
+				reg = <3>;
+				phy-mode = "internal";
+				phy-handle = <&gsw_phy3>;
+				status = "disabled";
+			};
+
+			gsw_port4: port@4 {
+				reg = <4>;
+				phy-mode = "internal";
+				phy-handle = <&gsw_phy4>;
+				status = "disabled";
+			};
+
+			port@6 {
+				reg = <6>;
+				ethernet = <&gdm1>;
+				phy-mode = "internal";
+
+				fixed-link {
+					speed = <10000>;
+					full-duplex;
+					pause;
+				};
+			};
+		};
+
+		mdio: mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			gsw_phy1: ethernet-phy@9 {
+				compatible = "ethernet-phy-ieee802.3-c22";
+				reg = <9>;
+			};
+
+			gsw_phy2: ethernet-phy@a {
+				compatible = "ethernet-phy-ieee802.3-c22";
+				reg = <10>;
+			};
+
+			gsw_phy3: ethernet-phy@b {
+				compatible = "ethernet-phy-ieee802.3-c22";
+				reg = <11>;
+			};
+
+			gsw_phy4: ethernet-phy@c {
+				compatible = "ethernet-phy-ieee802.3-c22";
+				reg = <12>;
+			};
+		};
+	};
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&pcie0 {
+	status = "okay";
+};
+
+&pcie1 {
+	status = "okay";
+};
+
+&nand {
+	status = "okay";
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "bootloader";
+			reg = <0x00000000 0x00080000>;
+			read-only;
+		};
+
+		partition@80000 {
+			label = "romfile";
+			reg = <0x00080000 0x00040000>;
+			read-only;
+		};
+
+		/* OpenWrt firmware: merged vendor tclinux (5MB) + ubifs (45MB) = 50MB.
+		 * U-Boot boots the FIT kernel from offset 0xc0000; the squashfs rootfs
+		 * follows immediately after the kernel in the same partition.
+		 */
+		partition@c0000 {
+			label = "firmware";
+			reg = <0x000c0000 0x03200000>;
+		};
+
+		partition@32c0000 {
+			label = "tclinux_slave";
+			reg = <0x032c0000 0x00500000>;
+			read-only;
+		};
+
+		partition@37c0000 {
+			label = "ubifs_slave";
+			reg = <0x037c0000 0x02d00000>;
+			read-only;
+		};
+
+		partition@64c0000 {
+			label = "ptconf";
+			reg = <0x064c0000 0x00600000>;
+			read-only;
+		};
+
+		partition@6ac0000 {
+			label = "ptdata";
+			reg = <0x06ac0000 0x00400000>;
+			read-only;
+		};
+
+		partition@6ec0000 {
+			label = "config";
+			reg = <0x06ec0000 0x00100000>;
+		};
+
+		partition@6fc0000 {
+			label = "reservearea";
+			reg = <0x06fc0000 0x00240000>;
+			read-only;
+		};
+	};
+};
+
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+};
+
+&switch {
+	status = "okay";
+};
+
+&gsw_port1 {
+	status = "okay";
+};
+
+&gsw_port2 {
+	status = "okay";
+};
+
+&gsw_port3 {
+	status = "okay";
+};
+
+&gsw_port4 {
+	status = "okay";
+};

@@ -1,0 +1,26 @@
+#
+# Copyright (C) 2015 OpenWrt.org
+#
+
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+
+board=$(board_name)
+
+case "$board" in
+airoha,en7523-ax3000-router)
+	ucidef_set_led_default "power" "power" "green:power" "1"
+	ucidef_set_led_netdev "internet" "internet" "green:internet" "eth4" "link tx rx"
+	# WiFi LEDs on MT7916 (phy0=2.4GHz, phy1=5GHz)
+	# The GPIO mux is fixed up by hotplug.d/ieee80211/15-wifi-led-mux
+	ucidef_set_led_wlan "wifi2g" "WiFi 2.4GHz" "mt76-phy0" "phy0tpt"
+	ucidef_set_led_wlan "wifi5g" "WiFi 5GHz" "mt76-phy1" "phy1tpt"
+	# WPS LED — no default trigger (user can assign via LuCI)
+	ucidef_set_led_default "wps" "WPS" "green:wps" "0"
+	;;
+esac
+
+board_config_flush
+
+exit 0

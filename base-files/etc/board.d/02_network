@@ -1,0 +1,36 @@
+#
+# Copyright (c) 2015 The Linux Foundation. All rights reserved.
+# Copyright (c) 2011-2015 OpenWrt.org
+#
+
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
+
+en7523_setup_interfaces()
+{
+	local board="$1"
+
+	case "$board" in
+	airoha,en7523-evb)
+		ucidef_set_interfaces_lan_wan "eth1 eth2 eth3 eth4" "eth0"
+		;;
+	airoha,en7523-ax3000-router)
+		# DSA port mapping: eth1=p1=LAN4, eth2=p2=LAN3,
+		# eth3=p3=LAN2, eth4=p4=LAN1 (verified on hardware).
+		# eth0 is the DSA conduit (must NOT be in the bridge).
+		# LAN1 (eth4) is used as WAN port for router mode.
+		# LAN ports: eth1 eth2 eth3, WAN: eth4
+		ucidef_set_interfaces_lan_wan "eth1 eth2 eth3" "eth4"
+		;;
+	*)
+		echo "Unsupported hardware. Network interfaces not initialized"
+		;;
+	esac
+}
+
+board_config_update
+board=$(board_name)
+en7523_setup_interfaces $board
+board_config_flush
+
+exit 0

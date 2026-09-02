@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fix ACL/capabilities file permissions for initramfs boots on NTFS build hosts.
+# NTFS doesn't support Unix permissions, so all files in the rootfs are 0755.
+# ubusd rejects ACL/capability JSON files that are not 0644.
+# This is only needed for initramfs (writable rootfs). For squashfs sysupgrade
+# images, permissions are fixed at build time via acl-perms.pseudo (see image/Makefile).
+chmod 0644 /usr/share/acl.d/*.json /etc/capabilities/*.json 2>/dev/null
+exit 0

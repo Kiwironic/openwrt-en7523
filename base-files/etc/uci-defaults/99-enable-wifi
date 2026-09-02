@@ -1,0 +1,16 @@
+#!/bin/sh
+# Enable WiFi radios by default on the EN7523 AX3000 router.
+# uci-defaults run before WiFi modules finish loading, so /etc/config/wireless
+# may not exist yet. The uci -q commands silently fail if sections don't exist.
+# A hotplug.d/ieee80211/20-enable-wifi script handles the case where WiFi is
+# detected later.
+. /lib/functions.sh
+
+[ "$(board_name)" = "airoha,en7523-ax3000-router" ] || exit 0
+
+# Try to enable if config already exists (from a previous boot or generated early)
+uci -q set wireless.default_radio0.disabled=0
+uci -q set wireless.default_radio1.disabled=0
+uci -q commit wireless
+
+exit 0

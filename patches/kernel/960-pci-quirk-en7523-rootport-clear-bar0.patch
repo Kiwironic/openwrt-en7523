@@ -1,0 +1,41 @@
+From: EN7523 port <noreply@localhost>
+Subject: [PATCH] PCI: quirk: clear EN7523 root port BAR 0 on 32-bit ARM
+
+The EN7523 PCIe root ports (14c3:0810 / 14c3:0811) advertise a 64-bit
+8 GiB prefetchable BAR 0. On 32-bit ARM the PCI core cannot handle a
+BAR larger than 4 GiB, so it disables the BAR and sets IORESOURCE_UNSET
+with size 0. pci_enable_resources() then refuses to enable the bridge
+because BAR 0 is unset, which prevents the pcieport driver from probing
+and prevents MMIO forwarding to downstream endpoints.
+
+The root port does not need its own BAR 0 to function as a bridge; only
+the bridge window (BAR 8) is needed for transaction forwarding. Clear
+BAR 0's resource flags entirely so that pci_enable_resources() skips it
+and the bridge can be enabled.
+
+Signed-off-by: EN7523 port <noreply@localhost>
+---
+ drivers/pci/quirks.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+--- a/drivers/pci/quirks.c	2026-08-31 20:32:46.671448317 +0700
++++ b/drivers/pci/quirks.c	2026-08-31 20:33:19.254550086 +0700
+@@ -6370,3 +6370,18 @@
+ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_GLI, 0x9750, pci_mask_replay_timer_timeout);
+ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_GLI, 0x9755, pci_mask_replay_timer_timeout);
+ #endif
++
++/*
++ * EN7523 PCIe root ports (14c3:0810 / 14c3:0811) advertise a 64-bit
++ * 8 GiB prefetchable BAR 0 that cannot be assigned on 32-bit ARM.
++ * Clear the resource flags so pci_enable_resources() skips it and
++ * the bridge can be enabled for MMIO forwarding to endpoints.
++ */
++static void quirk_en7523_rootport_clear_bar0(struct pci_dev *dev)
++{
++	dev->resource[0].start = 0;
++	dev->resource[0].end = 0;
++	dev->resource[0].flags = 0;
++}
++DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MEDIATEK, 0x0810, quirk_en7523_rootport_clear_bar0);
++DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_MEDIATEK, 0x0811, quirk_en7523_rootport_clear_bar0);

@@ -1,0 +1,36 @@
+# Sensitive data — never commit
+*dump*
+*backup*
+mtd[0-9]*
+*nand_dump*
+*secret*
+*credential*
+*password*
+
+# Build artifacts
+build/
+bin/
+tmp/
+*.o
+*.ko
+*.cmd
+.tmp_versions/
+
+# Editor / OS files
+.DS_Store
+*~
+*.swp
+*.swo
+*.orig
+*.rej
+
+# TFTP chunks (generated, not source)
+chunks/
+chunk[0-9]*
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Lock files
+*.lock

@@ -1,0 +1,16 @@
+diff -ruN a/drivers/soc/Kconfig b/drivers/soc/Kconfig
+--- a/drivers/soc/Kconfig	2026-08-25 11:52:56.683194355 +0700
++++ b/drivers/soc/Kconfig	2026-08-25 11:52:56.686321696 +0700
+@@ -33,3 +33,4 @@
+ source "drivers/soc/xilinx/Kconfig"
+ 
+ endmenu
++source "drivers/soc/airoha/Kconfig"
+diff -ruN a/drivers/soc/Makefile b/drivers/soc/Makefile
+--- a/drivers/soc/Makefile	2026-08-25 11:52:56.685333439 +0700
++++ b/drivers/soc/Makefile	2026-08-25 11:52:56.686321696 +0700
+@@ -37,3 +37,4 @@
+ obj-y				+= versatile/
+ obj-y				+= vt8500/
+ obj-y				+= xilinx/
++obj-$(CONFIG_ECONET_NPU)		+= airoha/
