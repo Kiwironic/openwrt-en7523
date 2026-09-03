@@ -7,6 +7,14 @@ mtd[0-9]*
 *credential*
 *password*
 
+# Firmware blobs — no redistribution rights, extract from your own device
+# (see docs/Firmware-Extraction.md)
+firmware/*.bin
+firmware/mediatek/*.bin
+
+# Local-only device provisioning (per-device credentials, not for the repo)
+local/
+
 # Build artifacts
 build/
 bin/

@@ -98,19 +98,31 @@ cp $REPO/dt/econet-npu-driver/* target/linux/airoha/files/drivers/soc/airoha/
 
 ### 3e. NPU Firmware
 
+The NPU firmware blobs (`npu_rv32.bin`, `npu_data.bin`) are **not included** in
+this repository — they lack redistribution rights. You must extract them from
+your own device. See **[Firmware-Extraction.md](Firmware-Extraction.md)** for
+the full procedure.
+
+Once extracted, place them in the build tree:
+
 ```bash
 mkdir -p target/linux/airoha/en7523/base-files/lib/firmware/econet/
-cp $REPO/firmware/npu_data.bin \
-   target/linux/airoha/en7523/base-files/lib/firmware/econet/
-cp $REPO/firmware/npu_rv32.bin \
+cp npu_data.bin npu_rv32.bin \
    target/linux/airoha/en7523/base-files/lib/firmware/econet/
 ```
 
-### 3f. WiFi Firmware
+### 3f. WiFi Firmware (EEPROM)
+
+The MT7916 calibration EEPROM (`mt7916_eeprom.bin`) is **not included** — it
+contains per-unit calibration data and lacks redistribution rights. Extract it
+from your device's `ptdata` partition. See
+**[Firmware-Extraction.md](Firmware-Extraction.md)**.
+
+Once extracted, place it in the build tree:
 
 ```bash
 mkdir -p target/linux/airoha/en7523/base-files/lib/firmware/mediatek/
-cp $REPO/firmware/mediatek/mt7916_eeprom.bin \
+cp mt7916_eeprom.bin \
    target/linux/airoha/en7523/base-files/lib/firmware/mediatek/
 ```
 

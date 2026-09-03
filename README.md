@@ -3,7 +3,13 @@
 This project contains all custom files needed to build a fully working OpenWrt
 image for an EN7523-based AX3000 WiFi router with MT7916 dual-band 802.11ax WiFi
 and MT7530 Ethernet switch. The image includes LuCI web UI, persistent NAND
-flash (sysupgrade), WiFi, hardware NAT offload via the NPU, and more.
+flash (sysupgrade), WiFi, Wi-Fi-RX hardware offload via the NPU, and more.
+
+> **Scope note:** EN7523 SoC support exists in the upstream community but is
+> spread across several trees (OpenWrt PR #20104, Sirherobrine23/airoha_kernel,
+> thienanh95/EN7523_gpon, merbanan/airoha_ml) and not yet consolidated. This
+> repository is a **board-validated subset** for this specific router, not a
+> consolidation effort. See the Acknowledgments section for the full provenance.
 
 ## Related Projects
 
@@ -28,8 +34,8 @@ flash (sysupgrade), WiFi, hardware NAT offload via the NPU, and more.
 | WiFi | MediaTek MT7916AN + MT7976DN dual-band 2x2 802.11ax |
 | Ethernet Switch | MediaTek MT7530 (4x LAN, internal PHYs) |
 | PCIe | 2 root ports (both populated with MediaTek WiFi endpoints) |
-| NPU | 4x RV32 cores (EcoNet network processing unit) |
-| Fiber | xPON connector (not supported under OpenWrt) |
+| NPU | 4x RV32 cores (EcoNet NPU — Wi-Fi-RX hardware offload) |
+| Fiber | xPON connector (GPON; not in this port, in-flight upstream) |
 | UART | 115200 8N1, 3.3V logic, CN3 header |
 | Buttons | Reset, WPS |
 | LEDs | Power, PON, LOS, Internet, WPS, LAN1-4, 2.4GHz, 5GHz |
@@ -45,7 +51,7 @@ flash (sysupgrade), WiFi, hardware NAT offload via the NPU, and more.
 | WiFi 2.4GHz | **Working** | mt7915e driver, phy0, scan + AP mode |
 | WiFi 5GHz | **Working** | mt7915e driver, phy1, scan + AP mode |
 | SPI-NAND / MTD | **Working** | 10 partitions detected |
-| NPU | **Working** | All 4 cores boot, firmware loaded |
+| NPU | **Working** | All 4 cores boot, firmware loaded; used for Wi-Fi-RX hw offload |
 | GPIO LEDs | **Working** | 5 SoC GPIO LEDs: Power, PON, LOS, Internet, WPS (GPIO 14) |
 | LAN port LEDs | **Working** | MT7530 PHY LED controller enabled (link indicator) |
 | WiFi LEDs | **Working** | phy0tpt (2.4GHz), phy1tpt (5GHz) via GPIO mux fix + mt76 triggers |
@@ -54,7 +60,7 @@ flash (sysupgrade), WiFi, hardware NAT offload via the NPU, and more.
 | Persistent flash | **Complete** | `mtd write` to NAND (NOT sysupgrade), FIT kernel + squashfs rootfs |
 | LuCI web UI | **Working** | uhttpd + LuCI, accessible on LAN |
 | Package manager | **Working** | apk (apk-mbedtls) |
-| xPON / Fiber | **Not supported** | Requires vendor driver port (major effort) |
+| xPON / Fiber | **Not in this port** | GPON work in-flight upstream (thienanh95/EN7523_gpon), working against some OLTs |
 
 ## Key Technical Findings
 
@@ -87,12 +93,20 @@ compat.ko → cfg80211.ko → mac80211.ko → mt76.ko → mt76-connac-lib.ko
 - `hwmon.ko` needs `i2c-core.ko` (for `i2c_verify_client`)
 - `mt7915e.ko` needs `hwmon.ko` (for `devm_hwmon_device_register_with_groups`)
 
-### 3. EEPROM
+### 3. EEPROM / WiFi Calibration
 
-The MT7916 EEPROM is loaded from `mediatek/mt7916_eeprom.bin` (a 4096-byte
-calibration blob). The efuse read path fails on this board, so the driver falls
-back to the default bin. This means TX power and antenna config are generic
-defaults, not per-unit calibrated.
+The MT7916 EEPROM (4096 bytes) contains per-unit TX power and antenna
+calibration data. The efuse read path fails on this board, so the EEPROM must
+be loaded from the `ptdata` NAND partition instead. The calibration data is
+stored as `RT30xxEEPROM.bin` (208896 bytes) inside a UBI volume on `ptdata`;
+the mt76 driver loads the first 4096 bytes as the EEPROM. The previous release
+shipped a generic default `mt7916_eeprom.bin` — this is **not correct**; the
+proper calibration tables must be extracted from the device's own `ptdata`
+partition. See `docs/Firmware-Extraction.md` for the extraction procedure.
+
+The preferred long-term fix is to wire an nvmem cell from the ptdata partition
+to the MT7916 device node in the DTS, so calibration is loaded directly from
+flash at boot without a static blob.
 
 ### 4. NPU Firmware
 
@@ -100,8 +114,14 @@ The EN7523 NPU requires two firmware blobs:
 - `npu_rv32.bin` — RV32 core firmware (60584 bytes)
 - `npu_data.bin` — NPU data table (712 bytes)
 
-Both are loaded at boot. The NPU handles packet processing for the Ethernet
-hardware offload engine (PPE/QDMA).
+Both are loaded at boot. The NPU is used for **Wi-Fi-RX hardware offload**
+(not Ethernet PPE/QDMA or NAT offload). The driver
+(`dt/econet-npu-driver/econet-npu.c`) only wires up the `WIFI_MAIL` mailbox
+and `econet_npu_wifi_offload_set_pkt_buf_addr` path.
+
+These firmware blobs are **not redistributed** in this repository — they lack
+explicit redistribution rights. Extract them from your own device. See
+`docs/Firmware-Extraction.md`.
 
 ### 5. Kernel Load Address
 
@@ -173,7 +193,7 @@ The image includes:
 - **WireGuard** VPN (luci-app-wireguard, wireguard-tools, kmod-wireguard)
 - **tcpdump** packet analyzer
 - **mt76** / **mt7915e** WiFi driver
-- **NPU** Ethernet hardware offload (econet-npu driver + firmware)
+- **NPU** Wi-Fi-RX hardware offload (econet-npu driver + firmware)
 
 ## Flashing to NAND
 
@@ -280,17 +300,17 @@ LED mode register configuration issue in the MT7530 driver.
 
 On some boots, the NPU firmware load may time out during probe. This is
 intermittent and a warm reboot typically resolves it. The NPU is not critical
-for basic Ethernet functionality — it provides hardware packet offload (PPE/
-QDMA) which accelerates routed traffic but is not required for the network
-stack to function.
+for basic Ethernet functionality — it provides Wi-Fi-RX hardware offload and
+is not required for the network stack to function.
 
-### xPON Not Supported
+### xPON / GPON
 
-The fiber/xPON port requires the vendor's xPON driver stack, which is a binary
-blob compiled for the stock kernel (Linux 4.4.x). Porting to 6.18.x requires
-either reverse-engineering the driver from register-level documentation (which
-isn't public) or porting the vendor driver to the 6.18 kernel API (significant
-API changes). This is a major effort and not included in the current scope.
+The fiber/xPON port is **not included in this port**. GPON support for EN7523
+is in-flight upstream — the [thienanh95/EN7523_gpon](https://github.com/thienanh95/EN7523_gpon)
+tree reports working GPON against some OLTs. The vendor driver stack targets
+the stock kernel (Linux 4.4.x); porting to 6.18.x is a significant effort
+being pursued by the community. This repository focuses on the Ethernet/WiFi
+router use case.
 
 ## Project Structure
 
@@ -302,6 +322,7 @@ openwrt-en7523-public/
 ├── Identification/              Board/chip/antenna photos for hardware reference
 ├── docs/
 │   ├── BUILD.md                 Detailed build instructions
+│   ├── Firmware-Extraction.md   How to extract firmware blobs from your device
 │   ├── PCI-Quirk-EN7523.md      PCI BAR 0 quirk explanation
 │   └── TFTP-Transfer.md         Chunked TFTP RAM-boot procedure
 ├── dt/
@@ -310,7 +331,7 @@ openwrt-en7523-public/
 │       ├── econet-npu.c
 │       ├── Kconfig
 │       └── Makefile
-├── firmware/
+├── firmware/                   (gitignored — extract from your device)
 │   ├── npu_data.bin             NPU data table firmware
 │   ├── npu_rv32.bin             NPU RV32 core firmware
 │   └── mediatek/
@@ -364,7 +385,10 @@ openwrt-en7523-public/
 - DTS and custom driver code: GPL-2.0-only OR BSD-2-Clause (matching OpenWrt
   conventions)
 - Patches: Same license as the files they modify
-- NPU firmware: Proprietary (redistributable as firmware blob, not source)
+- **Firmware blobs** (`npu_rv32.bin`, `npu_data.bin`, `mt7916_eeprom.bin`):
+  Proprietary. **No redistribution rights are claimed or granted.** These
+  blobs are not included in this repository. You must extract them from your
+  own device. See `docs/Firmware-Extraction.md`.
 
 ## Acknowledgments
 
