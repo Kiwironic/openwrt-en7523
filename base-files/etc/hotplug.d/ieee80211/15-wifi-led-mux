@@ -29,4 +29,9 @@ done
 echo 0x70005054 > "$DBG/regidx"
 echo 0x33000000 > "$DBG/regval"
 
+# The /etc/init.d/led script runs at boot (START=96) before the mt76
+# driver registers its LEDs, so the netdev triggers from the uci config
+# are never applied.  Reload the LED config now that the LEDs exist.
+/etc/init.d/led restart 2>/dev/null
+
 exit 0

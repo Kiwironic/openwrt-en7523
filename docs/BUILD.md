@@ -162,6 +162,7 @@ cp $REPO/base-files/lib/upgrade/platform.sh \
 
 ```bash
 cp $REPO/image/Makefile target/linux/airoha/image/Makefile
+cp $REPO/image/en7523.mk target/linux/airoha/image/en7523.mk
 cp $REPO/image/acl-perms.pseudo target/linux/airoha/image/acl-perms.pseudo
 ```
 

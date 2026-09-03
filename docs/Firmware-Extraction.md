@@ -1,6 +1,6 @@
 # Firmware Extraction Guide
 
-The EN7523 AX3000 router requires three firmware blobs that are **not
+The EN7523 AX3000 router requires firmware blobs that are **not
 redistributed** in this repository. They lack explicit redistribution rights.
 You must extract them from your own device's NAND flash and place them in the
 build tree before building.
@@ -11,7 +11,13 @@ build tree before building.
 |---|---|---|---|
 | `npu_rv32.bin` | 60584 B | `ubifs_slave` partition (UBI volume) | NPU RV32 core firmware |
 | `npu_data.bin` | 712 B | `ubifs_slave` partition (UBI volume) | NPU data table |
-| `mt7916_eeprom.bin` | 4096 B | `ptdata` partition (UBI volume: `RT30xxEEPROM.bin`, first 4096 bytes) | MT7916 WiFi calibration EEPROM |
+| `mt7916_eeprom.bin` | 4096 B | `reservearea` partition at offset `0x4c000` (raw flash) | MT7916 WiFi calibration EEPROM |
+
+> **WiFi EEPROM note:** The DTS includes an nvmem cell that loads the EEPROM
+> directly from `reservearea` at boot (see `dt/en7523-ax3000-router.dts`).
+> With this nvmem cell, the static `mt7916_eeprom.bin` file is only needed as
+> a fallback if the nvmem load fails. If you want to rely solely on the nvmem
+> cell, you can skip extracting the EEPROM file entirely.
 
 ## Partition Map (NAND, OpenWrt layout)
 
@@ -25,9 +31,9 @@ From the device tree (`dt/en7523-ax3000-router.dts`) and verified on device:
 | `tclinux_slave` | mtd6 | 0x32c0000 | 0x500000 | vendor backup, read-only |
 | `ubifs_slave` | mtd7 | 0x37c0000 | 0x2d00000 | vendor backup, read-only — **NPU firmware source** |
 | `ptconf` | mtd8 | 0x64c0000 | 0x600000 | read-only |
-| `ptdata` | mtd9 | 0x6ac0000 | 0x400000 | UBI volume — **WiFi EEPROM source** |
+| `ptdata` | mtd9 | 0x6ac0000 | 0x400000 | UBI volume (contains `RT30xxEEPROM.bin`) |
 | `config` | mtd10 | 0x6ec0000 | 0x100000 | writable |
-| `reservearea` | mtd11 | 0x6fc0000 | 0x240000 | read-only (empty on this board) |
+| `reservearea` | mtd11 | 0x6fc0000 | 0x240000 | read-only — **WiFi EEPROM at offset 0x4c000** |
 
 ## Extraction Procedure
 
@@ -35,7 +41,7 @@ From the device tree (`dt/en7523-ax3000-router.dts`) and verified on device:
 
 - A router running OpenWrt (via TFTP RAM-boot or a previous installation)
 - SSH access to the router
-- `ubi-reader` on the build host (`pip3 install --user ubi-reader`)
+- `ubi-reader` on the build host (`pip3 install --user ubi-reader`) — only needed for NPU firmware
 
 ### Step 1: Dump the Source Partitions
 
@@ -43,13 +49,13 @@ From the device tree (`dt/en7523-ax3000-router.dts`) and verified on device:
 ssh root@<router-ip>
 
 # Dump the partitions containing the firmware
-dd if=/dev/mtd7ro of=/tmp/ubifs_slave.bin    # NPU firmware
-dd if=/dev/mtd9ro of=/tmp/ptdata.bin         # WiFi EEPROM
+dd if=/dev/mtd7ro of=/tmp/ubifs_slave.bin       # NPU firmware
+dd if=/dev/mtd11ro of=/tmp/reservearea.bin      # WiFi EEPROM
 
 # Transfer to build host
 exit
 scp -O root@<router-ip>:/tmp/ubifs_slave.bin /tmp/
-scp -O root@<router-ip>:/tmp/ptdata.bin /tmp/
+scp -O root@<router-ip>:/tmp/reservearea.bin /tmp/
 ```
 
 ### Step 2: Extract NPU Firmware from ubifs_slave
@@ -62,21 +68,25 @@ ubireader_extract_files -o /tmp/ubi_npu /tmp/ubifs_slave.bin
 find /tmp/ubi_npu -name "npu_rv32.bin" -o -name "npu_data.bin"
 ```
 
-### Step 3: Extract WiFi EEPROM from ptdata
+### Step 3: Extract WiFi EEPROM from reservearea
 
-The `ptdata` partition is a UBI image containing the WiFi calibration data
-as `RT30xxEEPROM.bin` (208896 bytes). The mt76 driver loads the first 4096
-bytes as the EEPROM.
+The EEPROM is stored as raw data in the `reservearea` partition at offset
+`0x4c000` (verified on hardware — the first bytes contain the device MAC
+address). Extract the 4096-byte EEPROM:
 
 ```bash
-ubireader_extract_files -o /tmp/ubi_ptdata /tmp/ptdata.bin
-# Find RT30xxEEPROM.bin in the extracted directory
-find /tmp/ubi_ptdata -name "RT30xxEEPROM.bin"
-
-# Extract the first 4096 bytes (the EEPROM the driver loads)
-dd if=/tmp/ubi_ptdata/*/ptdata/RT30xxEEPROM.bin \
-   of=mt7916_eeprom.bin bs=4096 count=1
+dd if=/tmp/reservearea.bin of=mt7916_eeprom.bin bs=1 skip=$((0x4c000)) count=4096
 ```
+
+> **Alternative:** The EEPROM is also available as `RT30xxEEPROM.bin`
+> (208896 bytes) inside a UBI volume on the `ptdata` partition. The first
+> 4096 bytes are identical to the `reservearea` data:
+> ```bash
+> dd if=/dev/mtd9ro of=/tmp/ptdata.bin
+> ubireader_extract_files -o /tmp/ubi_ptdata /tmp/ptdata.bin
+> dd if=/tmp/ubi_ptdata/*/ptdata/RT30xxEEPROM.bin \
+>    of=mt7916_eeprom.bin bs=4096 count=1
+> ```
 
 ### Step 4: Verify Sizes
 
@@ -96,25 +106,50 @@ mkdir -p target/linux/airoha/en7523/base-files/lib/firmware/econet/
 cp npu_rv32.bin npu_data.bin \
    target/linux/airoha/en7523/base-files/lib/firmware/econet/
 
-# WiFi EEPROM
+# WiFi EEPROM (fallback — see note above about nvmem cell)
 mkdir -p target/linux/airoha/en7523/base-files/lib/firmware/mediatek/
 cp mt7916_eeprom.bin \
    target/linux/airoha/en7523/base-files/lib/firmware/mediatek/
 ```
 
-## Loading Calibration from Flash (Preferred)
+## NVMEM Cell (Implemented)
 
-Instead of shipping a static EEPROM blob, the preferred approach is to load
-the MT7916 calibration directly from the art partition at boot time via an
-nvmem cell. This requires:
+The DTS (`dt/en7523-ax3000-router.dts`) includes an nvmem cell in the
+`reservearea` partition that covers the 4096-byte EEPROM region at offset
+`0x4c000`:
 
-1. Adding an nvmem cell to the ptdata partition in the device tree that covers
-   the 4096-byte EEPROM region.
-2. Adding an `nvmem-cells` reference to the MT7916 PCIe device node.
-3. Removing the fallback to `mediatek/mt7916_eeprom.bin`.
+```dts
+partition@6fc0000 {
+    label = "reservearea";
+    reg = <0x06fc0000 0x00240000>;
+    read-only;
 
-This is the correct long-term fix (see README §3, "EEPROM"). The static blob
-approach is a temporary workaround for when the efuse read path fails.
+    nvmem-layout {
+        compatible = "fixed-layout";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        mt7916_eeprom_factory: eeprom@4c000 {
+            reg = <0x4c000 0x1000>;
+        };
+    };
+};
+```
+
+The MT7916 PCIe device node references this cell:
+
+```dts
+wifi: wifi@0,0 {
+    compatible = "mediatek,mt76";
+    ...
+    nvmem-cells = <&mt7916_eeprom_factory>;
+    nvmem-cell-names = "eeprom";
+};
+```
+
+The mt76 driver tries the nvmem cell first, then efuse, then falls back to
+the static `mt7916_eeprom.bin` file. With the nvmem cell in place, the
+EEPROM is loaded directly from flash at boot without needing a static blob.
 
 ## Legal Note
 

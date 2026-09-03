@@ -1,0 +1,43 @@
+From: T625LM port
+Date: Wed, 3 Sep 2025 00:00:00 +0000
+Subject: [PATCH] mt76: raise tpt blink threshold above beacon rate
+
+The default mt76_tpt_blink table starts at 0 KB/s, so any traffic
+including beacons (~3-8 KB/s) triggers blinking.  This makes the WiFi
+LEDs flash continuously even when no stations are connected and no
+user data is flowing.
+
+Raise the first threshold to 50 KB/s so that:
+  - 0-50 KB/s (beacons only): LED solid on
+  - >50 KB/s (actual data): LED blinks, faster as throughput increases
+
+This gives the desired behaviour: solid green when the radio is
+broadcasting, flashing when real data is being transferred, and off
+when the radio is disabled.
+
+--- a/mac80211.c
++++ b/mac80211.c
+@@ -115,14 +115,14 @@ static const struct ieee80211_tpt_blink mt76_tpt_blink[] = {
+-	{ .throughput =   0 * 1024, .blink_time = 334 },
+-	{ .throughput =   1 * 1024, .blink_time = 260 },
+-	{ .throughput =   5 * 1024, .blink_time = 220 },
+-	{ .throughput =  10 * 1024, .blink_time = 190 },
+-	{ .throughput =  20 * 1024, .blink_time = 170 },
+-	{ .throughput =  50 * 1024, .blink_time = 150 },
+-	{ .throughput =  70 * 1024, .blink_time = 130 },
+-	{ .throughput = 100 * 1024, .blink_time = 110 },
+-	{ .throughput = 200 * 1024, .blink_time =  80 },
+-	{ .throughput = 300 * 1024, .blink_time =  50 },
++	{ .throughput =  50 * 1024, .blink_time = 334 },
++	{ .throughput = 100 * 1024, .blink_time = 260 },
++	{ .throughput = 200 * 1024, .blink_time = 220 },
++	{ .throughput = 400 * 1024, .blink_time = 190 },
++	{ .throughput = 700 * 1024, .blink_time = 170 },
++	{ .throughput = 1000 * 1024, .blink_time = 150 },
++	{ .throughput = 1500 * 1024, .blink_time = 130 },
++	{ .throughput = 2000 * 1024, .blink_time = 110 },
++	{ .throughput = 3000 * 1024, .blink_time =  80 },
++	{ .throughput = 5000 * 1024, .blink_time =  50 },
+ };
+ 
+ struct ieee80211_rate mt76_rates[] = {

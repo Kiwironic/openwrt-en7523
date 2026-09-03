@@ -52,9 +52,9 @@ flash (sysupgrade), WiFi, Wi-Fi-RX hardware offload via the NPU, and more.
 | WiFi 5GHz | **Working** | mt7915e driver, phy1, scan + AP mode |
 | SPI-NAND / MTD | **Working** | 10 partitions detected |
 | NPU | **Working** | All 4 cores boot, firmware loaded; used for Wi-Fi-RX hw offload |
-| GPIO LEDs | **Working** | 5 SoC GPIO LEDs: Power, PON, LOS, Internet, WPS (GPIO 14) |
+| GPIO LEDs | **Working** | 4 SoC GPIO LEDs: Power, PON, LOS, Internet (WPS GPIO 14 does not light — see Known Issues) |
 | LAN port LEDs | **Working** | MT7530 PHY LED controller enabled (link indicator) |
-| WiFi LEDs | **Working** | phy0tpt (2.4GHz), phy1tpt (5GHz) via GPIO mux fix + mt76 triggers |
+| WiFi LEDs | **Working** | netdev trigger on phy0-ap0/phy1-ap0 (solid on when AP up, flash on rx) via GPIO mux fix + DTS led sub-node |
 | Reset button | **Working** | gpio-keys-polled, KEY_RESTART |
 | WPS button | **Working** | gpio-keys-polled, KEY_WPS_BUTTON |
 | Persistent flash | **Complete** | `mtd write` to NAND (NOT sysupgrade), FIT kernel + squashfs rootfs |
@@ -96,17 +96,19 @@ compat.ko → cfg80211.ko → mac80211.ko → mt76.ko → mt76-connac-lib.ko
 ### 3. EEPROM / WiFi Calibration
 
 The MT7916 EEPROM (4096 bytes) contains per-unit TX power and antenna
-calibration data. The efuse read path fails on this board, so the EEPROM must
-be loaded from the `ptdata` NAND partition instead. The calibration data is
-stored as `RT30xxEEPROM.bin` (208896 bytes) inside a UBI volume on `ptdata`;
-the mt76 driver loads the first 4096 bytes as the EEPROM. The previous release
-shipped a generic default `mt7916_eeprom.bin` — this is **not correct**; the
-proper calibration tables must be extracted from the device's own `ptdata`
-partition. See `docs/Firmware-Extraction.md` for the extraction procedure.
+calibration data. The efuse read path fails on this board, so the EEPROM is
+loaded from the `reservearea` NAND partition at offset `0x4c000` via an nvmem
+cell in the DTS. This was confirmed by merbanan (who checked multiple EN7523 +
+MT7916 boards) and verified on this device — the data at `reservearea+0x4c000`
+starts with the device MAC address and matches the `RT30xxEEPROM.bin` UBI
+volume on the `ptdata` partition.
 
-The preferred long-term fix is to wire an nvmem cell from the ptdata partition
-to the MT7916 device node in the DTS, so calibration is loaded directly from
-flash at boot without a static blob.
+The DTS includes the nvmem cell wiring (see `dt/en7523-ax3000-router.dts`):
+the `reservearea` partition has an `eeprom@4c000` cell, and the MT7916 PCIe
+device node references it via `nvmem-cells = <&mt7916_eeprom_factory>`. The
+mt76 driver loads the EEPROM from flash at boot. A static fallback file
+(`mt7916_eeprom.bin`) can be placed in the build tree as a safety net — see
+`docs/Firmware-Extraction.md`.
 
 ### 4. NPU Firmware
 
@@ -137,6 +139,12 @@ mapping so the write silently fails. A hotplug script
 (`base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux`) uses the debugfs
 regidx/regval interface to set the mux correctly, routing GPIO 14/15 on the
 MT7916 to the LED controller.
+
+The DTS also includes a `led` sub-node in the MT7916 device node with
+`led-sources = <2>` and `led-active-low`, which tells the mt76 driver to
+register LED class devices and set the correct polarity. The `01_leds`
+board script assigns `phy0tpt`/`phy1tpt` triggers to these LEDs, and the
+hotplug script applies them after the PHY is registered.
 
 ### 7. ujail / ubus Incompatibility
 
@@ -248,9 +256,9 @@ installed into the image's root filesystem:
 Defines LED triggers for the board:
 - Power LED: default on
 - Internet LED: netdev trigger on `eth4` (link/tx/rx)
-- WiFi 2.4GHz LED: `phy0tpt` trigger (phy0 = 2.4GHz)
-- WiFi 5GHz LED: `phy1tpt` trigger (phy1 = 5GHz)
-- WPS LED: default off (assignable via LuCI)
+- WiFi 2.4GHz LED: netdev trigger on `phy0-ap0` (link/rx, 50ms interval) — solid on when AP is up, flashes on received traffic
+- WiFi 5GHz LED: netdev trigger on `phy1-ap0` (link/rx, 50ms interval) — solid on when AP is up, flashes on received traffic
+- WPS LED: default off (does not light on this hardware — see Known Issues)
 
 ### Network Configuration (`etc/board.d/02_network`)
 
@@ -288,6 +296,14 @@ Defines the sysupgrade path using `fit_check_image` for validation and
 `fit_do_upgrade` for writing to NAND.
 
 ## Known Issues
+
+### WPS LED Does Not Light
+
+The WPS LED (GPIO 14) is configured in the DTS and registered as
+`green:wps`, but it does not light on this hardware. GPIO 14 may conflict
+with SPI quad mode on the NAND flash, preventing the GPIO from being
+claimed. The LED entry is kept in the config for completeness but is
+expected to stay off.
 
 ### LAN LED Activity Blink Not Working
 
@@ -365,6 +381,7 @@ openwrt-en7523-public/
 │           └── platform.sh      Sysupgrade platform handler
 ├── image/                       Image build files
 │   ├── Makefile                 target/linux/airoha/image/Makefile
+│   ├── en7523.mk                target/linux/airoha/image/en7523.mk (device definitions)
 │   └── acl-perms.pseudo         Squashfs permission overrides
 ├── package-fixes/
 │   └── wpad.init                Patched wpad init script (ujail disabled)

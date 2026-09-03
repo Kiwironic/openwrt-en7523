@@ -284,6 +284,28 @@
 
 &pcie1 {
 	status = "okay";
+
+	pcie@1,0 {
+		reg = <0x0800 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		wifi: wifi@0,0 {
+			compatible = "mediatek,mt76";
+			reg = <0x0000 0 0 0 0>;
+
+			airoha,npu = <&npu>;
+			airoha,eth = <&eth>;
+
+			nvmem-cells = <&mt7916_eeprom_factory>;
+			nvmem-cell-names = "eeprom";
+
+			led {
+				led-sources = <2>;
+				led-active-low;
+			};
+		};
+	};
 };
 
 &nand {
@@ -348,6 +370,16 @@
 			label = "reservearea";
 			reg = <0x06fc0000 0x00240000>;
 			read-only;
+
+			nvmem-layout {
+				compatible = "fixed-layout";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				mt7916_eeprom_factory: eeprom@4c000 {
+					reg = <0x4c000 0x1000>;
+				};
+			};
 		};
 	};
 };

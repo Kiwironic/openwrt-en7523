@@ -1,0 +1,13 @@
+#!/bin/sh
+# Set the blink interval for WiFi netdev LEDs.
+# ucidef_set_led_netdev() in board.d/01_leds does not support the interval
+# option, so we add it here after the board config is generated.
+. /lib/functions.sh
+
+[ "$(board_name)" = "airoha,en7523-ax3000-router" ] || exit 0
+
+uci -q set system.led_wifi2g.interval='50'
+uci -q set system.led_wifi5g.interval='50'
+uci -q commit system
+
+exit 0
