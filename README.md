@@ -51,7 +51,7 @@ flash (sysupgrade), WiFi, Wi-Fi-RX hardware offload via the NPU, and more.
 | WiFi 2.4GHz | **Working** | mt7915e driver, phy0, scan + AP mode |
 | WiFi 5GHz | **Working** | mt7915e driver, phy1, scan + AP mode |
 | SPI-NAND / MTD | **Working** | 12 partitions detected (mtd0-mtd11) |
-| NPU | **Partial** | Firmware loads in initramfs; on NAND boot the built-in driver probes before rootfs mount and fails with -110. See Known Issues. |
+| NPU | **Working** | All 4 RV32 cores boot, firmware loaded as module (not built-in) |
 | GPIO LEDs | **Working** | 4 SoC GPIO LEDs: Power, PON, LOS, Internet (WPS GPIO 14 does not light — see Known Issues) |
 | LAN port LEDs | **Working** | MT7530 PHY LED controller enabled (link + activity blink) |
 | WiFi LEDs | **Working** | netdev trigger on phy0-ap0/phy1-ap0 (solid on when AP up, flash on rx) via GPIO mux fix + DTS led sub-node |
@@ -116,12 +116,12 @@ The EN7523 NPU requires two firmware blobs:
 - `npu_rv32.bin` — RV32 core firmware (60584 bytes)
 - `npu_data.bin` — NPU data table (712 bytes)
 
-Both are loaded at boot in initramfs mode. On NAND boot, the built-in driver
-probes before rootfs mount and cannot find the firmware — see Known Issues.
-The NPU is used for **Wi-Fi-RX hardware offload**
-(not Ethernet PPE/QDMA or NAT offload). The driver
-(`dt/econet-npu-driver/econet-npu.c`) only wires up the `WIFI_MAIL` mailbox
-and `econet_npu_wifi_offload_set_pkt_buf_addr` path.
+Both are loaded at boot. The NPU driver is built as a module
+(`CONFIG_ECONET_NPU=m`) so it loads after the rootfs is mounted, avoiding
+a firmware-not-found error that occurs when built-in. The NPU is used for
+**Wi-Fi-RX hardware offload** (not Ethernet PPE/QDMA or NAT offload). The
+driver (`dt/econet-npu-driver/econet-npu.c`) only wires up the `WIFI_MAIL`
+mailbox and `econet_npu_wifi_offload_set_pkt_buf_addr` path.
 
 These firmware blobs are **not redistributed** in this repository — they lack
 explicit redistribution rights. Extract them from your own device. See
@@ -130,9 +130,9 @@ explicit redistribution rights. Extract them from your own device. See
 ### 4a. WiFi Firmware Version
 
 The MT7916 WM firmware shipped with mt76 has build datecode `20240823`. A
-newer version (`20260428`) is available from the TP-Link xx530v v2 firmware
-image. The newer firmware is not included here — extract it from the
-TP-Link firmware if needed and place it in `lib/firmware/mediatek/`.
+newer version (`20260428`) is available from another vendor's firmware
+image. The newer firmware is not included here — extract it from that
+vendor's firmware if needed and place it in `lib/firmware/mediatek/`.
 
 This device's EEPROM does not contain precal data (the `MT_EE_DO_PRE_CAL_V2`
 flag at offset `0x19a` is `0x00`). The mt76 driver supports precal loading
@@ -215,7 +215,7 @@ The image includes:
 - **WireGuard** VPN (luci-app-wireguard, wireguard-tools, kmod-wireguard)
 - **tcpdump** packet analyzer
 - **mt76** / **mt7915e** WiFi driver
-- **NPU** Wi-Fi-RX hardware offload (econet-npu driver + firmware; initramfs only — see Known Issues)
+- **NPU** Wi-Fi-RX hardware offload (econet-npu driver + firmware)
 
 ## Flashing to NAND
 
@@ -325,21 +325,12 @@ with SPI quad mode on the NAND flash, preventing the GPIO from being
 claimed. The LED entry is kept in the config for completeness but is
 expected to stay off.
 
-### NPU Fails on NAND Boot
+### NPU Driver Must Be a Module
 
-The NPU driver is compiled as a built-in (not a module), so it probes during
-kernel init — before the squashfs rootfs is mounted. The firmware files
-(`npu_rv32.bin`, `npu_data.bin`) are in the rootfs, so the driver cannot find
-them and fails with `-110` (timeout after firmware load error `-2`/ENOENT).
-
-The NPU works correctly in initramfs mode (where the firmware is in RAM).
-
-**Fix (not yet implemented):** Build the NPU driver as a module
-(`CONFIG_ECONET_NPU=m`) so it loads after rootfs mount. This requires changes
-to the kernel config and the `950-econet-npu-en7523.patch`.
-
-The NPU is not critical for basic Ethernet or WiFi functionality — it provides
-Wi-Fi-RX hardware offload only.
+The NPU driver (`econet-npu`) must be built as a module (`CONFIG_ECONET_NPU=m`),
+not built-in. When built-in, it probes before the squashfs rootfs is mounted
+and cannot find the firmware files, failing with `-110` (timeout). As a
+module, it loads after rootfs mount and all 4 cores boot successfully.
 
 ### xPON / GPON
 
@@ -481,6 +472,6 @@ lines from their original authors:
   and LuCI web UI
 - **Airoha/Econet** (formerly MediaTek's IoT division) for the EN7523 SoC
   and MT7530 switch documentation that made this port possible
-- **longnt2007** for confirming the EEPROM location in `reservearea` at
-  offset `0x4c000` across multiple EN7523+MT7916 boards, and for noting the
+- Community members who confirmed the EEPROM location in `reservearea` at
+  offset `0x4c000` across multiple EN7523+MT7916 boards, and noted the
   newer MT7916 WM firmware (20260428) and precal patch availability

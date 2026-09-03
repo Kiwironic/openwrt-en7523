@@ -209,6 +209,12 @@ Ensure these are selected:
 
 - `CONFIG_ARCH_AIROHA=y` is **required** — without it, the kernel panics
   immediately because ARM GIC/GICv3 is not enabled.
+- `CONFIG_ECONET_NPU=m` — the NPU driver must be a module, not built-in.
+  When built-in (`=y`), it probes before rootfs mount and cannot find the
+  firmware files. Change this in `target/linux/airoha/en7523/config-6.18`.
+  The built module (`econet-npu.ko`) must be copied to
+  `target/linux/airoha/en7523/base-files/lib/modules/<kernel-version>/`
+  and registered in `etc/modules.d/econet-npu`.
 - The kernel load address is `0x80208000` (set in the image Makefile).
 - `kmod-leds-gpio` and `kmod-gpio-button-hotplug` are NOT in DEFAULT_PACKAGES
   because the DTS has built-in LED/key nodes. Loading the module versions on

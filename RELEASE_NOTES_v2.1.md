@@ -1,117 +1,105 @@
-# Release v2.1 — DTS, LED, and Build Fixes
+# Release v2.1 — Build Fixes, WiFi LEDs, NPU Module, DTS Corrections
 
-This release fixes several build-breaking and hardware-level issues discovered
-during testing and community review. All changes are verified on hardware.
+Fixes several build-breaking and hardware-level issues discovered during
+testing and community review. All changes verified on hardware (persistent
+NAND install).
 
-## Summary of Changes
+## Build-breaking Fixes
 
-### Build-breaking fixes
+- **Added `image/en7523.mk`** — was missing from the public repo. Without it
+  no image can be built. Device defined as `airoha_en7523-ax3000-router`.
+- **Renamed DTS** to `en7523-ax3000-router.dts` to match the `compatible`
+  string and device definition.
+- **Fixed board name in all scripts** (`01_leds`, `02_network`,
+  `20-enable-wifi`, `99-enable-wifi`, `platform.sh`) — the DTS `compatible`
+  was changed to `airoha,en7523-ax3000-router` but the scripts still checked
+  the old name, causing network config to fall through to "Unsupported
+  hardware" and leaving the device unreachable after flash.
 
-- **Added `image/en7523.mk`** — This file was missing from the public repo.
-  Without it, the build system cannot define the device and no image is
-  produced. The device is now defined as `airoha_en7523-ax3000-router`
-  (previously used a vendor model name).
-- **Renamed DTS** to `en7523-ax3000-router.dts` to match
-  the `compatible` string and device definition.
-- **Updated all board scripts** (`01_leds`, `02_network`, `20-enable-wifi`,
-  `99-enable-wifi`, `platform.sh`) to use `airoha,en7523-ax3000-router` as
-  the board name. The previous release changed the DTS `compatible` string
-  but not the board scripts, causing the network config to fall through to
-  "Unsupported hardware" and leaving the device unreachable after flash.
+## WiFi LED Fixes
 
-### WiFi LED fixes
+- **Changed trigger** from `phy0tpt`/`phy1tpt` to `netdev` on `phy0-ap0`/
+  `phy1-ap0` with `link rx` mode and 50ms interval. Solid on when AP is up,
+  flashes on received traffic. The `phy0tpt` trigger kept LEDs off at idle.
+- **Added `99-set-wifi-led-interval`** uci-defaults script (50ms blink
+  interval, not supported by `ucidef_set_led_netdev`).
+- **Updated `15-wifi-led-mux`** hotplug to reload LED config via
+  `/etc/init.d/led restart` instead of hardcoding `phy0tpt`/`phy1tpt`.
+- **Added DTS `led` sub-node** (`led-sources = <2>`, `led-active-low`) —
+  tells mt76 to register LED class devices with correct polarity.
 
-- **Changed WiFi LED trigger** from `phy0tpt`/`phy1tpt` to `netdev` on
-  `phy0-ap0`/`phy1-ap0` with `link rx` mode and 50ms interval. This gives
-  the desired behavior: solid on when the AP is up, flashing on received
-  traffic. The `phy0tpt` trigger kept the LEDs off at idle (no traffic).
-- **Added `99-set-wifi-led-interval` uci-defaults script** to set the 50ms
-  blink interval (not supported by `ucidef_set_led_netdev`).
-- **Updated `15-wifi-led-mux` hotplug script** to reload the LED config
-  via `/etc/init.d/led restart` instead of hardcoding `phy0tpt`/`phy1tpt`
-  triggers (which would override the netdev trigger from uci).
-- **DTS `led` sub-node** (`led-sources = <2>`, `led-active-low`) in the
-  MT7916 device node — tells the mt76 driver to register LED class devices
-  with correct polarity.
+## NPU Module Fix
 
-### EEPROM / WiFi Calibration
+- **Changed `CONFIG_ECONET_NPU` from `=y` to `=m`** — when built-in, the
+  driver probes before the squashfs rootfs is mounted and cannot find the
+  firmware files (fails with `-110`). As a module, it loads after rootfs
+  mount and all 4 RV32 cores boot successfully.
+- Module is installed to `lib/modules/` and loaded via `etc/modules.d/`.
 
-- **DTS nvmem cell** in `reservearea` partition at offset `0x4c000` — loads
-  the EEPROM directly from flash at boot. Verified working: no "eeprom load
-  fail" message, MAC addresses match device calibration data.
-- **Updated `docs/Firmware-Extraction.md`** — corrected the EEPROM source
-  from `ptdata` (UBI volume) to `reservearea` (raw flash at 0x4c000), as
-  confirmed by merbanan and verified on hardware.
-- **Updated README §3** — documents the nvmem cell approach and the
-  `reservearea` offset.
+## EEPROM / WiFi Calibration
 
-### DTS additions
+- **Added nvmem cell** in `reservearea` partition at offset `0x4c000` —
+  loads EEPROM directly from flash at boot. Verified: no fallback to static
+  file, MAC addresses match device calibration data.
+- **Updated `docs/Firmware-Extraction.md`** — corrected EEPROM source from
+  `ptdata` (UBI volume) to `reservearea` (raw flash at 0x4c000).
+
+## DTS Additions
 
 - **`airoha,npu = <&npu>` and `airoha,eth = <&eth>`** phandles in the
-  MT7916 device node, matching the reference DTS from merbanan.
+  MT7916 device node.
+- **`read-only`** restored on `reservearea` partition.
 
-### Documentation
+## Documentation
 
-- **Added WPS LED to Known Issues** — GPIO 14 does not light on this
-  hardware (likely SPI quad mode conflict).
-- **Updated BUILD.md** — added `en7523.mk` copy step.
-- **Updated README** — LED config section, status table, project structure.
+- Added WPS LED to Known Issues (GPIO 14 does not light on this hardware).
+- Added WiFi firmware version note (§4a): mt76 ships WM firmware datecode
+  `20240823`; a newer `20260428` is available from another vendor's firmware.
+- Added precal note: this device's EEPROM has no precal data (flag at 0x19a
+  is 0x00); mt76 supports precal via nvmem but no cell is needed.
+- Corrected status table: 12 MTD partitions (not 10), 3 LAN + 1 WAN port
+  (not 4 LAN), WPS button untested, LAN port LEDs link-only.
+- Corrected network port mapping: eth4=LAN1/WAN, eth3=LAN2, eth2=LAN3,
+  eth1=LAN4.
+- Corrected flashing IP to 192.168.1.1 (was 192.168.2.1).
 
-## Reviewer Feedback — merbanan's points
-
-| # | Feedback point | Status |
-|---|---|---|
-| 1 | PCIe BAR quirk confirmed | Already implemented (patch 960) |
-| 2 | Don't use generic WiFi calibration; extract from art/reserved partition | Implemented: nvmem cell in `reservearea` at 0x4c000, static blob removed from repo |
-| 3 | GPON is in the works, working against some OLTs | Documented in README status table and Known Issues |
-| 4 | WiFi firmware and NPU firmware do not have redistribution rights | Firmware blobs removed, `.gitignore` prevents commits, extraction guide provided |
-| 5 | EN7523 support exists but is scattered, not consolidated | Documented in README scope note and Acknowledgments |
-| 6 | NPU is only used for Wi-Fi-RX hw-offload | Documented correctly throughout README |
-| 7 | DTS: EEPROM in reservearea at 0x4c000, airoha,eth phandle, nvmem-cells | Implemented in DTS, verified on hardware |
-
-## Reviewer Feedback — longnt2007's points
+## Community Feedback
 
 | # | Feedback point | Status |
 |---|---|---|
-| 1 | EEPROM in reservearea at 0x4c000 (confirmed on multiple EN7523+MT7916 boards) | Already implemented — nvmem cell at 0x4c000, verified on hardware |
+| 1 | EEPROM in reservearea at 0x4c000 (confirmed across multiple boards) | Implemented — nvmem cell, verified on hardware |
 | 2 | airoha,eth phandle in MT7916 node | Implemented in DTS |
-| 3 | precal patch for MT7916 (ID 0x7906) in mtk feeds | mt76 already supports precal via nvmem; this device's EEPROM has no precal data (flag at 0x19a is 0x00) |
-| 4 | Newer WM firmware (20260428) from TP-Link xx530v v2 | Documented in README §4a — not included, user must extract |
+| 3 | Precal patch for MT7916 (ID 0x7906) | mt76 supports precal via nvmem; this device has no precal data |
+| 4 | Newer WM firmware (20260428) available | Documented in README §4a — not included |
 
 ## Verified on Hardware
 
-All changes validated on a running EN7523 AX3000 router (persistent NAND install):
-
-- **Board name**: `airoha,en7523-ax3000-router`
-- **WiFi 2.4GHz**: AP mode, SSID `OpenWrt-EN7523`, channel 1, HE20, WPA2-PSK
-- **WiFi 5GHz**: AP mode, SSID `OpenWrt-EN7523-5G`, channel 36, HE80, WPA2-PSK
-- **WiFi LEDs**: Both solid on (brightness 255), netdev trigger on phy0-ap0/phy1-ap0
-- **Power LED**: On
-- **WPS LED**: Off (known issue — GPIO 14 conflict)
-- **EEPROM**: Loaded from nvmem cell (reservearea at 0x4c000) — no fallback to static file
-- **NPU**: Works in initramfs; fails on NAND boot (built-in driver probes before rootfs mount)
-- **Network**: LAN (eth1=LAN4, eth2=LAN3, eth3=LAN2) + WAN (eth4=LAN1), DSA working
-- **LuCI**: Accessible on the LAN (HTTP 200)
-- **PCI quirk**: Both root ports BAR 0 cleared, WiFi endpoints probing correctly
-- **MTD partitions**: 12 (9 in DTS + 3 auto-created from firmware)
-- **WPS button**: Registered in DTS but not verified on hardware
+- **Board**: `airoha,en7523-ax3000-router`
+- **WiFi**: 2.4GHz (HE20) + 5GHz (HE80), AP mode, WPA2-PSK
+- **WiFi LEDs**: Both solid on, netdev trigger on phy0-ap0/phy1-ap0
+- **NPU**: All 4 cores booted, firmware loaded (module)
+- **EEPROM**: Loaded from nvmem cell (reservearea at 0x4c000)
+- **Network**: LAN (eth1-3) + WAN (eth4), DSA working
+- **LuCI**: Accessible on LAN (HTTP 200)
+- **PCI**: Both root ports BAR 0 cleared, WiFi probing correctly
 
 ## Files Changed
 
 ### Added
-- `image/en7523.mk` — device definition for the build system
-- `base-files/etc/uci-defaults/99-set-wifi-led-interval` — WiFi LED blink interval
+- `image/en7523.mk`
+- `base-files/etc/uci-defaults/99-set-wifi-led-interval`
+- `patches/kernel/002-fix-led-blink-threshold.patch`
 
 ### Modified
-- `base-files/etc/board.d/01_leds` — WiFi LED trigger changed to netdev (link+rx)
-- `base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux` — reload LED config instead of hardcoding triggers
-- `dt/en7523-ax3000-router.dts` — added `led` sub-node, `airoha,npu`/`airoha,eth` phandles, nvmem cell in reservearea
-- `docs/BUILD.md` — added en7523.mk copy step
-- `docs/Firmware-Extraction.md` — corrected EEPROM source to reservearea
-- `README.md` — LED config, status table, EEPROM section, Known Issues (WPS LED), project structure
-- `RELEASE_NOTES_v2.0.md` — no changes (historical)
+- `base-files/etc/board.d/01_leds` — netdev trigger (link+rx)
+- `base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux` — reload LED config
+- `dt/en7523-ax3000-router.dts` — led sub-node, phandles, nvmem cell, read-only
+- `docs/BUILD.md` — en7523.mk copy step, 002 patch
+- `docs/Firmware-Extraction.md` — EEPROM source corrected to reservearea
+- `README.md` — status table, LED config, NPU, EEPROM, Known Issues
 
 ## Acknowledgments
 
-Thanks to **merbanan** for the DTS example (reservearea nvmem cell, airoha,eth
-phandle) and for confirming the PCIe BAR quirk and NPU usage.
+Thanks to **merbanan** for the DTS example (reservearea nvmem cell,
+airoha,eth phandle) and PCIe/NPU confirmation. Thanks to community members
+who confirmed the EEPROM location across multiple EN7523+MT7916 boards.
