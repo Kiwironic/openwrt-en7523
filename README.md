@@ -46,17 +46,17 @@ flash (sysupgrade), WiFi, Wi-Fi-RX hardware offload via the NPU, and more.
 |---|---|---|
 | Kernel boot | **Working** | Linux 6.18.x, persistent NAND + TFTP RAM-boot |
 | UART console | **Working** | ttyS0 at 115200 |
-| Ethernet | **Working** | airoha_eth + mt7530 DSA, 4 LAN ports |
+| Ethernet | **Working** | airoha_eth + mt7530 DSA, 3 LAN + 1 WAN port |
 | PCIe | **Working** | Both root ports enumerate and enable |
 | WiFi 2.4GHz | **Working** | mt7915e driver, phy0, scan + AP mode |
 | WiFi 5GHz | **Working** | mt7915e driver, phy1, scan + AP mode |
-| SPI-NAND / MTD | **Working** | 10 partitions detected |
-| NPU | **Working** | All 4 cores boot, firmware loaded; used for Wi-Fi-RX hw offload |
+| SPI-NAND / MTD | **Working** | 12 partitions detected (mtd0-mtd11) |
+| NPU | **Partial** | Firmware loads in initramfs; on NAND boot the built-in driver probes before rootfs mount and fails with -110. See Known Issues. |
 | GPIO LEDs | **Working** | 4 SoC GPIO LEDs: Power, PON, LOS, Internet (WPS GPIO 14 does not light — see Known Issues) |
-| LAN port LEDs | **Working** | MT7530 PHY LED controller enabled (link indicator) |
+| LAN port LEDs | **Working** | MT7530 PHY LED controller enabled (link + activity blink) |
 | WiFi LEDs | **Working** | netdev trigger on phy0-ap0/phy1-ap0 (solid on when AP up, flash on rx) via GPIO mux fix + DTS led sub-node |
 | Reset button | **Working** | gpio-keys-polled, KEY_RESTART |
-| WPS button | **Working** | gpio-keys-polled, KEY_WPS_BUTTON |
+| WPS button | **Untested** | gpio-keys-polled, KEY_WPS_BUTTON — registered in DTS but not verified on hardware |
 | Persistent flash | **Complete** | `mtd write` to NAND (NOT sysupgrade), FIT kernel + squashfs rootfs |
 | LuCI web UI | **Working** | uhttpd + LuCI, accessible on LAN |
 | Package manager | **Working** | apk (apk-mbedtls) |
@@ -116,7 +116,9 @@ The EN7523 NPU requires two firmware blobs:
 - `npu_rv32.bin` — RV32 core firmware (60584 bytes)
 - `npu_data.bin` — NPU data table (712 bytes)
 
-Both are loaded at boot. The NPU is used for **Wi-Fi-RX hardware offload**
+Both are loaded at boot in initramfs mode. On NAND boot, the built-in driver
+probes before rootfs mount and cannot find the firmware — see Known Issues.
+The NPU is used for **Wi-Fi-RX hardware offload**
 (not Ethernet PPE/QDMA or NAT offload). The driver
 (`dt/econet-npu-driver/econet-npu.c`) only wires up the `WIFI_MAIL` mailbox
 and `econet_npu_wifi_offload_set_pkt_buf_addr` path.
@@ -124,6 +126,17 @@ and `econet_npu_wifi_offload_set_pkt_buf_addr` path.
 These firmware blobs are **not redistributed** in this repository — they lack
 explicit redistribution rights. Extract them from your own device. See
 `docs/Firmware-Extraction.md`.
+
+### 4a. WiFi Firmware Version
+
+The MT7916 WM firmware shipped with mt76 has build datecode `20240823`. A
+newer version (`20260428`) is available from the TP-Link xx530v v2 firmware
+image. The newer firmware is not included here — extract it from the
+TP-Link firmware if needed and place it in `lib/firmware/mediatek/`.
+
+This device's EEPROM does not contain precal data (the `MT_EE_DO_PRE_CAL_V2`
+flag at offset `0x19a` is `0x00`). The mt76 driver supports precal loading
+via an nvmem `precal` cell, but no precal cell is needed for this board.
 
 ### 5. Kernel Load Address
 
@@ -143,8 +156,9 @@ MT7916 to the LED controller.
 The DTS also includes a `led` sub-node in the MT7916 device node with
 `led-sources = <2>` and `led-active-low`, which tells the mt76 driver to
 register LED class devices and set the correct polarity. The `01_leds`
-board script assigns `phy0tpt`/`phy1tpt` triggers to these LEDs, and the
-hotplug script applies them after the PHY is registered.
+board script assigns `netdev` triggers (link+rx mode) on `phy0-ap0`/`phy1-ap0`
+to these LEDs, and the hotplug script reloads the LED config after the PHY
+is registered.
 
 ### 7. ujail / ubus Incompatibility
 
@@ -201,7 +215,7 @@ The image includes:
 - **WireGuard** VPN (luci-app-wireguard, wireguard-tools, kmod-wireguard)
 - **tcpdump** packet analyzer
 - **mt76** / **mt7915e** WiFi driver
-- **NPU** Wi-Fi-RX hardware offload (econet-npu driver + firmware)
+- **NPU** Wi-Fi-RX hardware offload (econet-npu driver + firmware; initramfs only — see Known Issues)
 
 ## Flashing to NAND
 
@@ -217,11 +231,11 @@ flash for persistent installation:
 1. Boot OpenWrt via TFTP initramfs (see Recovery below or `docs/TFTP-Transfer.md`)
 2. Transfer the sysupgrade image to the router:
    ```bash
-   scp openwrt-airoha-en7523-*-sysupgrade.bin root@192.168.2.1:/tmp/
+   scp openwrt-airoha-en7523-*-sysupgrade.bin root@192.168.1.1:/tmp/
    ```
 3. Flash with `mtd` (NOT `sysupgrade`):
    ```bash
-   ssh root@192.168.2.1
+   ssh root@192.168.1.1
    mtd -r write /tmp/openwrt-airoha-en7523-*-sysupgrade.bin firmware
    ```
 4. The router will write the FIT kernel + squashfs rootfs to the `firmware`
@@ -263,8 +277,8 @@ Defines LED triggers for the board:
 ### Network Configuration (`etc/board.d/02_network`)
 
 Sets up LAN/WAN interfaces via DSA:
-- LAN: `eth1 eth2 eth3` (ports 1-3)
-- WAN: `eth4` (port 4, repurposed as WAN in router mode)
+- LAN: `eth1 eth2 eth3` (physical LAN4, LAN3, LAN2)
+- WAN: `eth4` (physical LAN1, repurposed as WAN in router mode)
 - `eth0` is the DSA conduit (not in the bridge)
 
 ### WiFi LED Mux Fix (`etc/hotplug.d/ieee80211/15-wifi-led-mux`)
@@ -282,6 +296,12 @@ script runs before the config exists.
 ### WiFi Enable (`etc/uci-defaults/99-enable-wifi`)
 
 Runs once on first boot to enable WiFi radios (`disabled=0`).
+
+### WiFi LED Blink Interval (`etc/uci-defaults/99-set-wifi-led-interval`)
+
+Sets the 50ms blink interval for the WiFi netdev LEDs. The
+`ucidef_set_led_netdev` function in `board.d/01_leds` does not support the
+`interval` option, so this script adds it after the board config is generated.
 
 ### ACL Permissions Fix (`etc/uci-defaults/99-fix-acl-perms`)
 
@@ -305,19 +325,21 @@ with SPI quad mode on the NAND flash, preventing the GPIO from being
 claimed. The LED entry is kept in the config for completeness but is
 expected to stay off.
 
-### LAN LED Activity Blink Not Working
+### NPU Fails on NAND Boot
 
-The MT7530 PHY LED controller is enabled (patch 930-44), which drives the LAN
-port LEDs for link status. However, the activity blink pattern is not
-functional — LEDs show link state but do not blink on traffic. This is a PHY
-LED mode register configuration issue in the MT7530 driver.
+The NPU driver is compiled as a built-in (not a module), so it probes during
+kernel init — before the squashfs rootfs is mounted. The firmware files
+(`npu_rv32.bin`, `npu_data.bin`) are in the rootfs, so the driver cannot find
+them and fails with `-110` (timeout after firmware load error `-2`/ENOENT).
 
-### NPU Probe Timeout
+The NPU works correctly in initramfs mode (where the firmware is in RAM).
 
-On some boots, the NPU firmware load may time out during probe. This is
-intermittent and a warm reboot typically resolves it. The NPU is not critical
-for basic Ethernet functionality — it provides Wi-Fi-RX hardware offload and
-is not required for the network stack to function.
+**Fix (not yet implemented):** Build the NPU driver as a module
+(`CONFIG_ECONET_NPU=m`) so it loads after rootfs mount. This requires changes
+to the kernel config and the `950-econet-npu-en7523.patch`.
+
+The NPU is not critical for basic Ethernet or WiFi functionality — it provides
+Wi-Fi-RX hardware offload only.
 
 ### xPON / GPON
 
@@ -355,6 +377,7 @@ openwrt-en7523-public/
 ├── patches/
 │   └── kernel/                  Custom kernel + mt76 patches
 │       ├── 001-fix-mt76-led-cflags.patch
+│       ├── 002-fix-led-blink-threshold.patch
 │       ├── 203-*.patch          Pinctrl fixes
 │       ├── 900-*.patch          BMT support
 │       ├── 901-*.patch          SNAND BMT support
@@ -376,7 +399,8 @@ openwrt-en7523-public/
 │       │   └── 20-enable-wifi   WiFi enable fallback
 │       ├── uci-defaults/
 │       │   ├── 99-enable-wifi   Enable WiFi on first boot
-│       │   └── 99-fix-acl-perms Fix ACL file permissions
+│       │   ├── 99-fix-acl-perms Fix ACL file permissions
+│       │   └── 99-set-wifi-led-interval  WiFi LED blink interval
 │       └── lib/upgrade/
 │           └── platform.sh      Sysupgrade platform handler
 ├── image/                       Image build files
@@ -429,7 +453,8 @@ the following sources:
   driver (`econet-npu.c`) and related patches.
 - **[merbanan/airoha_ml](https://github.com/merbanan/airoha_ml)** —
   Airoha SoC machine-learning and Frame Engine tools. Used for register-level
-  reverse engineering of the QDMA/PPE blocks.
+  reverse engineering of the QDMA/PPE blocks. Also provided the reference DTS
+  for the MT7916 nvmem cell in `reservearea` and the `airoha,eth` phandle.
 - **[thienanh95/EN7523_gpon](https://github.com/thienanh95/EN7523_gpon)** —
   EN7523 GPON OpenWrt tree. The Ethernet/DSA patch subset (930-42 through
   930-51) originates from this tree's EN7523 series.
@@ -456,3 +481,6 @@ lines from their original authors:
   and LuCI web UI
 - **Airoha/Econet** (formerly MediaTek's IoT division) for the EN7523 SoC
   and MT7530 switch documentation that made this port possible
+- **longnt2007** for confirming the EEPROM location in `reservearea` at
+  offset `0x4c000` across multiple EN7523+MT7916 boards, and for noting the
+  newer MT7916 WM firmware (20260428) and precal patch availability

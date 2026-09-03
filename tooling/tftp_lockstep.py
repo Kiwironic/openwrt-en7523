@@ -11,7 +11,7 @@ are ignored.
 
 Prerequisites:
   sudo sysctl net.ipv4.ip_unprivileged_port_start=68   (or run as root)
-  sudo firewall-cmd --add-port=69/udp                    (runtime only, Fedora)
+  sudo firewall-cmd --add-port=69/udp                    (runtime only, RPM-based)
 
 Usage:
   python3 tftp_lockstep.py                              # defaults below

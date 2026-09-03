@@ -74,8 +74,9 @@
 	 * WiFi 2.4G=GPIO4, WiFi 5G=GPIO5. These were in SPI flash mode
 	 * (SCU 0x034 bits 4,5) but the pinctrl hwinit now clears those bits
 	 * to free them as GPIO outputs. The SPI NAND uses a dedicated SNFI
-	 * controller, not these pins. WiFi LED triggers (phy0tpt/phy1tpt)
-	 * are registered by the mt76 driver when the WiFi PHY comes up.
+	 * controller, not these pins. WiFi LED netdev triggers (link+rx on
+	 * phy0-ap0/phy1-ap0) are configured by the board script (01_leds)
+	 * and applied by the hotplug script after the WiFi PHY comes up.
 	 * WPS=GPIO14 is registered for the WPS LED. If it conflicts with
 	 * SPI quad mode, the GPIO request will fail safely (LED won't light
 	 * but NAND access is unaffected).

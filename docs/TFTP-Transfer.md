@@ -22,7 +22,7 @@ Use a lockstep RFC-1350 TFTP server with:
 
 ### Firewall
 
-On Fedora-based hosts, open UDP port 69:
+On RPM-based Linux hosts, open UDP port 69:
 ```bash
 sudo firewall-cmd --add-port=69/udp
 ```

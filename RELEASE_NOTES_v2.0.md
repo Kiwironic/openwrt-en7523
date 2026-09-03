@@ -52,8 +52,7 @@ mt76 driver could not load the oversized file and fell back to a built-in
 default, meaning WiFi was running without per-unit calibration. This was
 fixed by replacing the file in `files/lib/firmware/mediatek/` with the
 correct 4096-byte EEPROM, rebuilding, and reflashing. The image was
-verified to contain the correct 4096-byte EEPROM (SHA256:
-`563bb8d4ef9faf7abdb6d12d75273b39bf31cb1b4473202a1cabbdd5f5bac330`).
+verified to contain the correct 4096-byte EEPROM.
 
 ## Firmware Extraction
 
@@ -69,7 +68,7 @@ for the full procedure. Quick summary:
 
 ## Verified on Hardware
 
-All changes were validated on a running EN7523 AX3000 router (T3 T625LM):
+All changes were validated on a running EN7523 AX3000 router:
 - WiFi: both radios (2.4GHz + 5GHz) working in AP mode with WPA2-PSK
 - Ethernet: LAN port 2 (eth3) verified with link; DSA working
 - LEDs: Power, PON, Internet (netdev), WPS, WiFi 2.4GHz (phy0tpt), WiFi 5GHz

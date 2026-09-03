@@ -12,7 +12,7 @@ the router (or while it's at the U-Boot prompt already). It will:
 
 Prerequisites:
   - tftp_lockstep.py running on 192.168.2.126:69
-  - Host NIC up at 192.168.2.126 (e.g. nmcli con up <your-static-connection>)
+  - Host NIC up at 192.168.2.126 (e.g. nmcli con up <your-connection>)
   - sudo sysctl net.ipv4.ip_unprivileged_port_start=68
   - sudo firewall-cmd --add-port=69/udp
   - Chunks in chunks/ (re-chunk after every rebuild)

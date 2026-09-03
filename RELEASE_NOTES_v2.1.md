@@ -10,8 +10,8 @@ during testing and community review. All changes are verified on hardware.
 - **Added `image/en7523.mk`** — This file was missing from the public repo.
   Without it, the build system cannot define the device and no image is
   produced. The device is now defined as `airoha_en7523-ax3000-router`
-  (was `kiwironic_t3-t625lm`).
-- **Renamed DTS** from `t3-t625lm.dts` to `en7523-ax3000-router.dts` to match
+  (previously used a vendor model name).
+- **Renamed DTS** to `en7523-ax3000-router.dts` to match
   the `compatible` string and device definition.
 - **Updated all board scripts** (`01_leds`, `02_network`, `20-enable-wifi`,
   `99-enable-wifi`, `platform.sh`) to use `airoha,en7523-ax3000-router` as
@@ -69,6 +69,15 @@ during testing and community review. All changes are verified on hardware.
 | 6 | NPU is only used for Wi-Fi-RX hw-offload | Documented correctly throughout README |
 | 7 | DTS: EEPROM in reservearea at 0x4c000, airoha,eth phandle, nvmem-cells | Implemented in DTS, verified on hardware |
 
+## Reviewer Feedback — longnt2007's points
+
+| # | Feedback point | Status |
+|---|---|---|
+| 1 | EEPROM in reservearea at 0x4c000 (confirmed on multiple EN7523+MT7916 boards) | Already implemented — nvmem cell at 0x4c000, verified on hardware |
+| 2 | airoha,eth phandle in MT7916 node | Implemented in DTS |
+| 3 | precal patch for MT7916 (ID 0x7906) in mtk feeds | mt76 already supports precal via nvmem; this device's EEPROM has no precal data (flag at 0x19a is 0x00) |
+| 4 | Newer WM firmware (20260428) from TP-Link xx530v v2 | Documented in README §4a — not included, user must extract |
+
 ## Verified on Hardware
 
 All changes validated on a running EN7523 AX3000 router (persistent NAND install):
@@ -80,10 +89,12 @@ All changes validated on a running EN7523 AX3000 router (persistent NAND install
 - **Power LED**: On
 - **WPS LED**: Off (known issue — GPIO 14 conflict)
 - **EEPROM**: Loaded from nvmem cell (reservearea at 0x4c000) — no fallback to static file
-- **NPU**: Firmware loaded successfully (npu_rv32.bin + npu_data.bin)
-- **Network**: LAN (eth1, eth2, eth3) + WAN (eth4), DSA working
-- **LuCI**: Accessible at http://192.168.1.50 (HTTP 200)
+- **NPU**: Works in initramfs; fails on NAND boot (built-in driver probes before rootfs mount)
+- **Network**: LAN (eth1=LAN4, eth2=LAN3, eth3=LAN2) + WAN (eth4=LAN1), DSA working
+- **LuCI**: Accessible on the LAN (HTTP 200)
 - **PCI quirk**: Both root ports BAR 0 cleared, WiFi endpoints probing correctly
+- **MTD partitions**: 12 (9 in DTS + 3 auto-created from firmware)
+- **WPS button**: Registered in DTS but not verified on hardware
 
 ## Files Changed
 

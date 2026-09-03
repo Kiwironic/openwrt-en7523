@@ -1,4 +1,4 @@
-From: T625LM port
+From: EN7523 port
 Date: Wed, 3 Sep 2025 00:00:00 +0000
 Subject: [PATCH] mt76: raise tpt blink threshold above beacon rate
 

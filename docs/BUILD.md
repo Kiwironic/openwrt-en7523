@@ -7,10 +7,10 @@ OpenWrt image for the EN7523 AX3000 router from this repository.
 
 ### Build Host
 
-- Linux build host (tested on Fedora, should work on Ubuntu/Debian)
+- Linux build host (tested on RPM-based and Debian-based distros)
 - OpenWrt build dependencies:
   ```bash
-  # Fedora
+  # RPM-based (Fedora/RHEL/CentOS)
   sudo dnf install ncurses-devel perl-FindBin perl-IPC-Cmd dtc \
     gcc gcc-c++ make flex bison gmp-devel mpfr-devel mpc-devel
 
@@ -63,6 +63,7 @@ cp $REPO/patches/kernel/*.patch target/linux/airoha/patches-6.18/
 
 This includes:
 - `001-fix-mt76-led-cflags.patch` — mt76 LED cflags fix (also copy to mt76)
+- `002-fix-led-blink-threshold.patch` — mt76 tpt blink threshold fix (also copy to mt76)
 - `203-*.patch` — pinctrl fixes (GPIO direction, SCU IOMUX reset, pin mux)
 - `900-*.patch`, `901-*.patch` — BMT (bad block management table) support
 - `913-*.patch` — PCIe host bridge reset on init
@@ -74,12 +75,13 @@ This includes:
 - `950-*.patch` — Econet NPU driver
 - `960-*.patch` — PCI quirk for root port BAR 0
 
-### 3b. mt76 LED Patch
+### 3b. mt76 LED Patches
 
-The mt76 patch goes in the mt76 package's patch directory:
+The mt76 patches go in the mt76 package's patch directory:
 
 ```bash
 cp $REPO/patches/kernel/001-fix-mt76-led-cflags.patch \
+   $REPO/patches/kernel/002-fix-led-blink-threshold.patch \
    package/kernel/mt76/patches/
 ```
 
@@ -150,6 +152,8 @@ mkdir -p target/linux/airoha/en7523/base-files/etc/uci-defaults/
 cp $REPO/base-files/etc/uci-defaults/99-enable-wifi \
    target/linux/airoha/en7523/base-files/etc/uci-defaults/
 cp $REPO/base-files/etc/uci-defaults/99-fix-acl-perms \
+   target/linux/airoha/en7523/base-files/etc/uci-defaults/
+cp $REPO/base-files/etc/uci-defaults/99-set-wifi-led-interval \
    target/linux/airoha/en7523/base-files/etc/uci-defaults/
 
 # Upgrade platform script
